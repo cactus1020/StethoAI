@@ -1,0 +1,82 @@
+# ========================================================
+# StethoAI Git Ignore Configuration
+# ========================================================
+
+# Credentials, Secrets & Environment
+.env
+.env.*
+*.env
+*.pem
+*.key
+*.cert
+
+# Vercel & Deployment Cache
+.vercel/
+.vercel
+
+# Python & Caching
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.coverage
+
+# Flutter & Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+mobile_app/build/
+mobile_app/.dart_tool/
+mobile_app/.flutter-plugins
+mobile_app/.flutter-plugins-dependencies
+mobile_app/.packages
+mobile_app/android/.gradle/
+mobile_app/android/local.properties
+mobile_app/ios/Flutter/ephemeral/
+mobile_app/macos/Flutter/ephemeral/
+
+# Binaries & Large Artifacts (Deliver via GitHub Releases instead)
+*.apk
+*.aab
+*.ipa
+*.exe
+*.dll
+*.so
+*.dylib
+recordings/*.wav
+
+# IDE & Editor Specific
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+*~
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+Desktop.ini
+ehthumbs.db

@@ -1,0 +1,1446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StethoAI — AI Digital Stethoscope System</title>
+  <link rel="icon" type="image/png" href="/logo.png">
+  <link rel="apple-touch-icon" href="/logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #0A0F17;
+      --card-dark: #131D2A;
+      --card-border: rgba(255, 255, 255, 0.08);
+      --cyan: #00E5FF;
+      --cyan-glow: rgba(0, 229, 255, 0.25);
+      --red: #FF3366;
+      --red-glow: rgba(255, 51, 102, 0.25);
+      --green: #10B981;
+      --green-glow: rgba(16, 185, 129, 0.25);
+      --amber: #F59E0B;
+      --text-main: #FFFFFF;
+      --text-muted: #94A3B8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      font-family: 'Inter', sans-serif;
+      min-height: 100vh;
+      line-height: 1.5;
+      overflow-x: hidden;
+    }
+
+    /* Ambient background glow */
+    .ambient-glow {
+      position: fixed;
+      top: -20%;
+      left: 30%;
+      width: 600px;
+      height: 600px;
+      background: radial-gradient(circle, rgba(0, 229, 255, 0.08) 0%, rgba(10, 15, 23, 0) 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    header {
+      position: sticky;
+      top: 0;
+      backdrop-filter: blur(16px);
+      background: rgba(10, 15, 23, 0.85);
+      border-bottom: 1px solid var(--card-border);
+      padding: 1rem 2rem;
+      z-index: 100;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: inherit;
+    }
+
+    .brand-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #00E5FF, #0077FF);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 20px rgba(0, 229, 255, 0.4);
+    }
+
+    .brand-icon svg {
+      width: 22px;
+      height: 22px;
+      fill: #0A0F17;
+    }
+
+    .brand-title {
+      font-size: 1.25rem;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+    }
+
+    .brand-title span {
+      color: var(--cyan);
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 20px;
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--green);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 10px var(--green);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(1.2); }
+    }
+
+    .container {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 2.5rem 1.5rem;
+      position: relative;
+      z-index: 1;
+    }
+
+    .hero {
+      text-align: center;
+      margin-bottom: 3rem;
+    }
+
+    .hero-badge {
+      display: inline-block;
+      padding: 4px 12px;
+      background: rgba(0, 229, 255, 0.1);
+      border: 1px solid rgba(0, 229, 255, 0.3);
+      color: var(--cyan);
+      border-radius: 12px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      margin-bottom: 1rem;
+    }
+
+    .hero h1 {
+      font-size: 2.75rem;
+      font-weight: 800;
+      letter-spacing: -1px;
+      margin-bottom: 0.75rem;
+      background: linear-gradient(180deg, #FFFFFF 0%, #94A3B8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero p {
+      color: var(--text-muted);
+      font-size: 1.1rem;
+      max-width: 720px;
+      margin: 0 auto 1.5rem auto;
+    }
+
+    /* Main Grid */
+    .studio-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+      margin-bottom: 3rem;
+    }
+
+    @media (max-width: 960px) {
+      .studio-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .card {
+      background: var(--card-dark);
+      border: 1px solid var(--card-border);
+      border-radius: 18px;
+      padding: 1.75rem;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid var(--card-border);
+    }
+
+    .card-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .card-title svg {
+      width: 20px;
+      height: 20px;
+      color: var(--cyan);
+    }
+
+    /* Sound source selector */
+    .section-label {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 0.75rem;
+    }
+
+    .preset-chips {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 1.5rem;
+    }
+
+    .chip-btn {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--card-border);
+      color: var(--text-main);
+      padding: 12px 14px;
+      border-radius: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-align: left;
+      transition: all 0.2s ease;
+    }
+
+    .chip-btn:hover {
+      background: rgba(0, 229, 255, 0.08);
+      border-color: rgba(0, 229, 255, 0.4);
+      transform: translateY(-1px);
+    }
+
+    .chip-btn.active {
+      background: rgba(0, 229, 255, 0.15);
+      border-color: var(--cyan);
+      box-shadow: 0 0 15px var(--cyan-glow);
+    }
+
+    .chip-btn .chip-indicator {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .indicator-crackle { background: #FF3366; box-shadow: 0 0 8px #FF3366; }
+    .indicator-wheeze { background: #F59E0B; box-shadow: 0 0 8px #F59E0B; }
+    .indicator-normal { background: #10B981; box-shadow: 0 0 8px #10B981; }
+    .indicator-both { background: #A855F7; box-shadow: 0 0 8px #A855F7; }
+
+    /* Dropzone & Mic */
+    .input-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 1.5rem;
+    }
+
+    .action-btn {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px dashed var(--card-border);
+      color: var(--text-muted);
+      padding: 14px;
+      border-radius: 12px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.8rem;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+
+    .action-btn:hover {
+      border-color: var(--cyan);
+      color: var(--text-main);
+      background: rgba(0, 229, 255, 0.05);
+    }
+
+    .action-btn.recording {
+      border-color: var(--red);
+      background: rgba(255, 51, 102, 0.12);
+      color: var(--red);
+      animation: pulse 1.5s infinite;
+    }
+
+    /* Waveform player */
+    .waveform-card {
+      background: #080C12;
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 1.5rem;
+    }
+
+    canvas#waveformCanvas {
+      width: 100%;
+      height: 90px;
+      display: block;
+    }
+
+    .player-controls {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .play-btn {
+      background: var(--cyan);
+      color: #0A0F17;
+      border: none;
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 15px var(--cyan-glow);
+      transition: transform 0.1s;
+    }
+
+    .play-btn:active {
+      transform: scale(0.95);
+    }
+
+    .player-meta {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    /* Big Submit Button */
+    .analyze-btn {
+      width: 100%;
+      background: linear-gradient(135deg, #00E5FF 0%, #0077FF 100%);
+      color: #0A0F17;
+      border: none;
+      padding: 16px;
+      border-radius: 14px;
+      font-size: 1.05rem;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      box-shadow: 0 10px 25px rgba(0, 229, 255, 0.35);
+      transition: all 0.2s;
+    }
+
+    .analyze-btn:hover {
+      box-shadow: 0 12px 30px rgba(0, 229, 255, 0.5);
+      transform: translateY(-2px);
+    }
+
+    .analyze-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    /* Diagnosis Dashboard */
+    .triage-banner {
+      padding: 1.25rem;
+      border-radius: 14px;
+      margin-bottom: 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      border: 1px solid transparent;
+      transition: all 0.3s;
+    }
+
+    .triage-alert {
+      background: rgba(255, 51, 102, 0.12);
+      border-color: rgba(255, 51, 102, 0.3);
+      box-shadow: 0 0 25px var(--red-glow);
+    }
+
+    .triage-normal {
+      background: rgba(16, 185, 129, 0.12);
+      border-color: rgba(16, 185, 129, 0.3);
+      box-shadow: 0 0 25px var(--green-glow);
+    }
+
+    .triage-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .triage-alert .triage-icon {
+      background: rgba(255, 51, 102, 0.2);
+      color: var(--red);
+    }
+
+    .triage-normal .triage-icon {
+      background: rgba(16, 185, 129, 0.2);
+      color: var(--green);
+    }
+
+    .triage-title {
+      font-size: 1.1rem;
+      font-weight: 800;
+      letter-spacing: -0.3px;
+    }
+
+    .triage-subtitle {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    /* Probability bars */
+    .metric-group {
+      margin-bottom: 1.25rem;
+    }
+
+    .metric-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    .bar-bg {
+      height: 8px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .bar-fill {
+      height: 100%;
+      border-radius: 4px;
+      width: 0%;
+      transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .bar-crackle { background: linear-gradient(90deg, #FF3366, #FF6699); }
+    .bar-wheeze { background: linear-gradient(90deg, #F59E0B, #FBBF24); }
+    .bar-normal { background: linear-gradient(90deg, #10B981, #34D399); }
+    .bar-both { background: linear-gradient(90deg, #A855F7, #C084FC); }
+
+    /* Segment timeline */
+    .timeline-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 1rem;
+    }
+
+    .seg-chip {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--card-border);
+      padding: 6px 10px;
+      border-radius: 8px;
+      font-size: 0.75rem;
+      font-family: 'JetBrains Mono', monospace;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .rec-box {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 14px;
+      font-size: 0.85rem;
+      color: #CBD5E1;
+      margin-top: 1.25rem;
+      line-height: 1.5;
+    }
+
+    /* Version Toggle Pill in Card Header */
+    .version-toggle-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .version-tag-label {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .version-toggle-pill {
+      display: inline-flex;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--card-border);
+      border-radius: 9999px;
+      padding: 3px;
+      gap: 3px;
+    }
+
+    .v-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      font-weight: 600;
+      font-family: inherit;
+      padding: 4px 12px;
+      border-radius: 9999px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+
+    .v-btn:hover {
+      color: #fff;
+    }
+
+    .v-btn.active {
+      background: linear-gradient(135deg, #00E5FF, #0077FF);
+      color: #0A0F17;
+      font-weight: 700;
+      box-shadow: 0 0 12px rgba(0, 229, 255, 0.35);
+    }
+
+    .v-btn.v1-active {
+      background: linear-gradient(135deg, #F59E0B, #D97706);
+      color: #0A0F17;
+      font-weight: 700;
+      box-shadow: 0 0 12px rgba(245, 158, 11, 0.35);
+    }
+
+    .v-btn.v3-active {
+      background: linear-gradient(135deg, #10B981, #059669);
+      color: #FFFFFF;
+      font-weight: 700;
+      box-shadow: 0 0 12px rgba(16, 185, 129, 0.45);
+    }
+
+    .brand-logo-img {
+      width: 38px;
+      height: 38px;
+      border-radius: 9px;
+      object-fit: cover;
+      box-shadow: 0 0 14px rgba(0, 229, 255, 0.4);
+      border: 1px solid rgba(0, 229, 255, 0.4);
+    }
+
+    .version-banner {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 0.78rem;
+      margin-bottom: 1rem;
+      border: 1px solid var(--card-border);
+      transition: all 0.2s ease;
+    }
+
+    .v3-banner {
+      background: rgba(16, 185, 129, 0.08);
+      border-color: rgba(16, 185, 129, 0.35);
+      color: #A7F3D0;
+    }
+
+    .v2-banner {
+      background: rgba(0, 229, 255, 0.05);
+      border-color: rgba(0, 229, 255, 0.25);
+      color: #A5F3FC;
+    }
+
+    .v1-banner {
+      background: rgba(245, 158, 11, 0.05);
+      border-color: rgba(245, 158, 11, 0.25);
+      color: #FDE68A;
+    }
+
+    .v-badge {
+      font-size: 0.68rem;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    .v3-banner .v-badge {
+      background: #10B981;
+      color: #FFFFFF;
+    }
+
+    .v2-banner .v-badge {
+      background: #00E5FF;
+      color: #0A0F17;
+    }
+
+    .v1-banner .v-badge {
+      background: #F59E0B;
+      color: #0A0F17;
+    }
+
+    /* Chest Landmark Guide Section */
+    .landmark-section {
+      margin-top: 4rem;
+      padding-top: 3rem;
+      border-top: 1px solid var(--card-border);
+    }
+
+    .landmarks-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.25rem;
+      margin-top: 1.5rem;
+    }
+
+    .landmark-card {
+      background: var(--card-dark);
+      border: 1px solid var(--card-border);
+      padding: 1.25rem;
+      border-radius: 14px;
+    }
+
+    .landmark-badge {
+      display: inline-block;
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: var(--cyan);
+      background: rgba(0, 229, 255, 0.1);
+      padding: 2px 8px;
+      border-radius: 6px;
+      margin-bottom: 6px;
+    }
+
+    /* Hardware Specs */
+    .hardware-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 1rem;
+      font-size: 0.85rem;
+    }
+
+    .hardware-table th, .hardware-table td {
+      padding: 10px 14px;
+      text-align: left;
+      border-bottom: 1px solid var(--card-border);
+    }
+
+    .hardware-table th {
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--card-border);
+      padding: 2.5rem 2rem;
+      text-align: center;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-top: 4rem;
+      background: rgba(10, 15, 23, 0.9);
+    }
+
+    footer a {
+      color: var(--cyan);
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="ambient-glow"></div>
+
+  <header>
+    <a href="/" class="brand">
+      <img src="/logo.png" alt="StethoAI Logo" class="brand-logo-img">
+      <div class="brand-title">Stetho<span>AI</span></div>
+    </a>
+    <div class="status-badge">
+      <div class="status-dot"></div>
+      <span>Cloud ML & Deep Learning (ONNX) Online</span>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="hero">
+      <div class="hero-badge">Medical Respiratory AI System</div>
+      <h1>Intelligent Digital Stethoscope</h1>
+      <p>Multi-engine Clinical Diagnostic System: Raw 500-Tree Baseline (V1), Acoustic Physics Calibration (V2), and Deep Learning Convolutional Neural Network (V3). Real-time screening for Crackles (Pneumonia/Edema) and Wheezes (Asthma/COPD).</p>
+    </section>
+
+    <div class="studio-grid">
+      <!-- Input Column -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 100-6 3 3 0 000 6z"/></svg>
+            Auscultation Sound Input
+          </div>
+          <div class="version-toggle-wrap">
+            <span class="version-tag-label">Engine:</span>
+            <div class="version-toggle-pill">
+              <button type="button" class="v-btn" id="btnV1" onclick="switchVersion('v1')">V1 (Original)</button>
+              <button type="button" class="v-btn active" id="btnV2" onclick="switchVersion('v2')">V2 (Enhanced)</button>
+              <button type="button" class="v-btn" id="btnV3" onclick="switchVersion('v3')">V3 (Deep CNN)</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="versionNote" class="version-banner v2-banner">
+          <span class="v-badge">V2 Active</span>
+          <span>Enhanced Latest AI Engine: 83 Acoustic Features + Multi-Modal Acoustic Physics Calibration</span>
+        </div>
+
+        <div class="section-label">Select Clinical Sound Sample</div>
+        <div class="preset-chips">
+          <button class="chip-btn active" onclick="loadPreset('crackles.mp3', this)">
+            <div class="chip-indicator indicator-crackle"></div>
+            <div>
+              <div>Crackles (Rales)</div>
+              <div style="font-size:0.7rem; color:var(--text-muted);">Pulmonary Edema</div>
+            </div>
+          </button>
+
+          <button class="chip-btn" onclick="loadPreset('wheeze.mp3', this)">
+            <div class="chip-indicator indicator-wheeze"></div>
+            <div>
+              <div>Wheezes</div>
+              <div style="font-size:0.7rem; color:var(--text-muted);">Asthma / Bronchospasm</div>
+            </div>
+          </button>
+
+          <button class="chip-btn" onclick="loadPreset('normal.wav', this)">
+            <div class="chip-indicator indicator-normal"></div>
+            <div>
+              <div>Normal Vesicular</div>
+              <div style="font-size:0.7rem; color:var(--text-muted);">Healthy Breath Sound</div>
+            </div>
+          </button>
+
+          <button class="chip-btn" onclick="loadPreset('both.wav', this)">
+            <div class="chip-indicator indicator-both"></div>
+            <div>
+              <div>Mixed (Both)</div>
+              <div style="font-size:0.7rem; color:var(--text-muted);">Crackle + Wheeze</div>
+            </div>
+          </button>
+        </div>
+
+        <div class="section-label">Or Custom Input</div>
+        <div class="input-actions">
+          <label class="action-btn">
+            <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+            <span>Upload Audio (.wav, .mp3)</span>
+            <input type="file" id="fileInput" accept="audio/*" style="display:none;" onchange="handleFileUpload(event)">
+          </label>
+
+          <button class="action-btn" id="micBtn" onclick="toggleMicRecording()">
+            <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 100-6 3 3 0 000 6z"/></svg>
+            <span id="micLabel">Record with Microphone</span>
+          </button>
+        </div>
+
+        <!-- Waveform visualizer -->
+        <div class="waveform-card">
+          <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
+            <span style="font-size:0.75rem; font-weight:700; color:var(--cyan); letter-spacing:0.5px;">AUDIO OSCILLOSCOPE</span>
+            <span id="audioStatus" style="font-size:0.75rem; color:var(--text-muted);">Ready</span>
+          </div>
+          <canvas id="waveformCanvas"></canvas>
+          <div class="player-controls">
+            <button class="play-btn" id="playBtn" onclick="togglePlay()">
+              <svg id="playIcon" width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            </button>
+            <div class="player-meta">
+              <span id="currentTime">0.00</span>s / <span id="totalTime">0.00</span>s
+            </div>
+          </div>
+        </div>
+
+        <button class="analyze-btn" id="analyzeBtn" onclick="runPrediction()">
+          <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          Run Cloud AI Diagnosis
+        </button>
+      </div>
+
+      <!-- Output Column -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+            Clinical Triage & Metrics
+          </div>
+          <span id="resultEngineBadge" style="font-size:0.75rem; color:var(--cyan); font-weight:700;">V2 Engine Active</span>
+        </div>
+
+        <div id="resultsPlaceholder" style="text-align:center; padding:3rem 1rem; color:var(--text-muted);">
+          <svg width="48" height="48" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="margin-bottom:12px; opacity:0.4;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+          <div>Select or record a breath sound and click <b>"Run Cloud AI Diagnosis"</b></div>
+        </div>
+
+        <div id="resultsContainer" style="display:none;">
+          <!-- Triage Badge -->
+          <div class="triage-banner" id="triageBanner">
+            <div class="triage-icon" id="triageIcon">
+              <svg width="24" height="24" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+            </div>
+            <div>
+              <div class="triage-title" id="triageTitle">NEEDS REFERRAL — YES</div>
+              <div class="triage-subtitle" id="triageSubtitle">Abnormal Respiratory Acoustic Pattern Detected</div>
+            </div>
+          </div>
+
+          <!-- Multi-Class Probability Bars -->
+          <div class="section-label">Auscultation Probability Breakdown</div>
+
+          <div class="metric-group">
+            <div class="metric-row">
+              <span>Crackle (Rales)</span>
+              <span id="probCrackle">0%</span>
+            </div>
+            <div class="bar-bg">
+              <div class="bar-fill bar-crackle" id="barCrackle"></div>
+            </div>
+          </div>
+
+          <div class="metric-group">
+            <div class="metric-row">
+              <span>Wheeze (Bronchospasm)</span>
+              <span id="probWheeze">0%</span>
+            </div>
+            <div class="bar-bg">
+              <div class="bar-fill bar-wheeze" id="barWheeze"></div>
+            </div>
+          </div>
+
+          <div class="metric-group">
+            <div class="metric-row">
+              <span>Normal Vesicular</span>
+              <span id="probNormal">0%</span>
+            </div>
+            <div class="bar-bg">
+              <div class="bar-fill bar-normal" id="barNormal"></div>
+            </div>
+          </div>
+
+          <div class="metric-group">
+            <div class="metric-row">
+              <span>Both (Crackle & Wheeze)</span>
+              <span id="probBoth">0%</span>
+            </div>
+            <div class="bar-bg">
+              <div class="bar-fill bar-both" id="barBoth"></div>
+            </div>
+          </div>
+
+          <!-- 3.0s Timeline Breakdown -->
+          <div class="section-label" style="margin-top:1.5rem;">3.0s Window Segmentation Timeline</div>
+          <div class="timeline-chips" id="segmentChips"></div>
+
+          <!-- Clinical recommendation -->
+          <div class="rec-box" id="recBox">
+            Clinical evaluation and pulmonary referral recommended based on characteristic crackle sound events.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Chest Landmarks Section -->
+    <section class="landmark-section">
+      <div class="hero-badge">Clinical Reference</div>
+      <h2 style="font-size:1.75rem; font-weight:800; margin-bottom:0.5rem;">Thoracic Auscultation Landmarks</h2>
+      <p style="color:var(--text-muted); font-size:0.95rem;">Recommended anatomical chest positions for probe placement when capturing lung sounds with the digital stethoscope.</p>
+
+      <div class="landmarks-grid">
+        <div class="landmark-card">
+          <div class="landmark-badge">RUL</div>
+          <h3 style="font-size:1rem; font-weight:700;">Right Upper Lobe</h3>
+          <p style="font-size:0.8rem; color:var(--text-muted); margin-top:4px;">2nd intercostal space, right midclavicular line. Detects apical tuberculosis, aspiration pneumonia, and bronchial breath sounds.</p>
+        </div>
+
+        <div class="landmark-card">
+          <div class="landmark-badge">LUL</div>
+          <h3 style="font-size:1rem; font-weight:700;">Left Upper Lobe</h3>
+          <p style="font-size:0.8rem; color:var(--text-muted); margin-top:4px;">2nd intercostal space, left midclavicular line. Evaluates upper bronchial clearance, wheezes, and upper lobe consolidation.</p>
+        </div>
+
+        <div class="landmark-card">
+          <div class="landmark-badge">RML</div>
+          <h3 style="font-size:1rem; font-weight:700;">Right Middle Lobe</h3>
+          <p style="font-size:0.8rem; color:var(--text-muted); margin-top:4px;">4th intercostal space, right anterior axillary line. Common site for pediatric pneumonias and right middle lobe syndrome.</p>
+        </div>
+
+        <div class="landmark-card">
+          <div class="landmark-badge">RLL / LLL</div>
+          <h3 style="font-size:1rem; font-weight:700;">Lower Lobes & Posterior Basilar</h3>
+          <p style="font-size:0.8rem; color:var(--text-muted); margin-top:4px;">6th-8th intercostal spaces posterior. Prime location for detecting fine inspiratory crackles in congestive heart failure and pulmonary edema.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ESP32 Hardware Section -->
+    <section class="landmark-section">
+      <div class="hero-badge">Hardware Architecture</div>
+      <h2 style="font-size:1.75rem; font-weight:800; margin-bottom:0.5rem;">ESP32 DevKit V1 + INMP441 Wiring</h2>
+      <p style="color:var(--text-muted); font-size:0.95rem;">Digital stethoscope circuit pinout for 24-bit I2S audio acquisition with Butterworth bandpass filtering (100–2000 Hz).</p>
+
+      <table class="hardware-table">
+        <thead>
+          <tr>
+            <th>INMP441 Pin</th>
+            <th>ESP32 GPIO Pin</th>
+            <th>Electrical Signal</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><b>VDD / 3V3</b></td>
+            <td>3V3</td>
+            <td>3.3V DC Power</td>
+            <td>Low-noise regulated supply</td>
+          </tr>
+          <tr>
+            <td><b>GND</b></td>
+            <td>GND</td>
+            <td>Ground Plane</td>
+            <td>Star ground to minimize digital switching noise</td>
+          </tr>
+          <tr>
+            <td><b>SD (Serial Data)</b></td>
+            <td>GPIO 33 / GPIO 32</td>
+            <td>I2S Serial Data</td>
+            <td>24-bit signed 2's complement PCM audio</td>
+          </tr>
+          <tr>
+            <td><b>WS (LRCLK)</b></td>
+            <td>GPIO 25</td>
+            <td>I2S Word Select</td>
+            <td>16 kHz sample rate frame clock</td>
+          </tr>
+          <tr>
+            <td><b>SCK (BCLK)</b></td>
+            <td>GPIO 26 / GPIO 33</td>
+            <td>I2S Bit Clock</td>
+            <td>Bit synchronization clock</td>
+          </tr>
+          <tr>
+            <td><b>L/R</b></td>
+            <td>GND</td>
+            <td>Channel Select</td>
+            <td>Tied to GND for Left channel acquisition</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+
+  <footer>
+    <p>StethoAI — AI Digital Stethoscope System • Powered by BalancedRandomForest • Hosted globally on <b>stethoai.covers.bd</b></p>
+  </footer>
+
+  <script>
+    let currentBlob = null;
+    let audioContext = null;
+    let audioBuffer = null;
+    let audioSource = null;
+    let isPlaying = false;
+    let startTime = 0;
+    let pauseTime = 0;
+    let animFrame = null;
+
+    // Mic recording state
+    let mediaRecorder = null;
+    let recordedChunks = [];
+    let isRecording = false;
+    let currentModelVersion = 'v2';
+
+    function switchVersion(ver) {
+      currentModelVersion = ver;
+      const btnV1 = document.getElementById('btnV1');
+      const btnV2 = document.getElementById('btnV2');
+      const btnV3 = document.getElementById('btnV3');
+      const banner = document.getElementById('versionNote');
+      const engineBadge = document.getElementById('resultEngineBadge');
+
+      btnV1.className = 'v-btn' + (ver === 'v1' ? ' active v1-active' : '');
+      btnV2.className = 'v-btn' + (ver === 'v2' ? ' active' : '');
+      if (btnV3) btnV3.className = 'v-btn' + (ver === 'v3' ? ' active v3-active' : '');
+
+      if (ver === 'v1') {
+        banner.className = 'version-banner v1-banner';
+        banner.innerHTML = '<span class="v-badge">V1 Active</span><span>Original Baseline Model: Raw 500-Tree Random Forest (Original argmax code without acoustic calibration)</span>';
+        if (engineBadge) {
+          engineBadge.innerText = 'V1 Baseline Active';
+          engineBadge.style.color = '#F59E0B';
+        }
+      } else if (ver === 'v3') {
+        banner.className = 'version-banner v3-banner';
+        banner.innerHTML = '<span class="v-badge">V3 Active</span><span>StethoDeepCNN Deep Learning Neural Network: 4-Stage ConvNet trained on 64-band Log-Mel Spectrograms</span>';
+        if (engineBadge) {
+          engineBadge.innerText = 'V3 Deep CNN Active';
+          engineBadge.style.color = '#10B981';
+        }
+      } else {
+        banner.className = 'version-banner v2-banner';
+        banner.innerHTML = '<span class="v-badge">V2 Active</span><span>Enhanced Latest AI Engine: 83 Acoustic Features + Multi-Modal Acoustic Physics Calibration</span>';
+        if (engineBadge) {
+          engineBadge.innerText = 'V2 Engine Active';
+          engineBadge.style.color = 'var(--cyan)';
+        }
+      }
+    }
+
+    // Auto-load preset on start
+    window.addEventListener('DOMContentLoaded', () => {
+      loadPreset('crackles.mp3', document.querySelector('.chip-btn.active'));
+    });
+
+    async function loadPreset(filename, btnElement) {
+      document.querySelectorAll('.chip-btn').forEach(b => b.classList.remove('active'));
+      if (btnElement) btnElement.classList.add('active');
+
+      document.getElementById('audioStatus').innerText = `Loading ${filename}...`;
+
+      try {
+        const resp = await fetch(`/samples/${filename}`);
+        if (!resp.ok) throw new Error("Could not load sample");
+        const blob = await resp.blob();
+        currentBlob = blob;
+        currentBlob.name = filename;
+        await decodeAndDraw(blob);
+        document.getElementById('audioStatus').innerText = filename;
+      } catch (err) {
+        console.error(err);
+        document.getElementById('audioStatus').innerText = "Load failed";
+      }
+    }
+
+    function audioBufferToWav(buffer, targetSampleRate = 16000) {
+      const numChannels = 1;
+      const sourceData = buffer.getChannelData(0);
+      let samples;
+
+      if (buffer.sampleRate === targetSampleRate) {
+        samples = sourceData;
+      } else {
+        const ratio = buffer.sampleRate / targetSampleRate;
+        const newLen = Math.round(sourceData.length / ratio);
+        samples = new Float32Array(newLen);
+        for (let i = 0; i < newLen; i++) {
+          const srcIdx = i * ratio;
+          const lo = Math.floor(srcIdx);
+          const hi = Math.min(lo + 1, sourceData.length - 1);
+          const frac = srcIdx - lo;
+          samples[i] = sourceData[lo] * (1 - frac) + sourceData[hi] * frac;
+        }
+      }
+
+      const numSamples = samples.length;
+      const bytesPerSample = 2; // 16-bit PCM
+      const blockAlign = numChannels * bytesPerSample;
+      const byteRate = targetSampleRate * blockAlign;
+      const dataSize = numSamples * bytesPerSample;
+      const bufferSize = 44 + dataSize;
+
+      const arrayBuffer = new ArrayBuffer(bufferSize);
+      const view = new DataView(arrayBuffer);
+
+      function writeStr(offset, str) {
+        for (let i = 0; i < str.length; i++) {
+          view.setUint8(offset + i, str.charCodeAt(i));
+        }
+      }
+
+      // RIFF header
+      writeStr(0, 'RIFF');
+      view.setUint32(4, 36 + dataSize, true);
+      writeStr(8, 'WAVE');
+
+      // fmt subchunk
+      writeStr(12, 'fmt ');
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true); // PCM
+      view.setUint16(22, numChannels, true);
+      view.setUint32(24, targetSampleRate, true);
+      view.setUint32(28, byteRate, true);
+      view.setUint16(32, blockAlign, true);
+      view.setUint16(34, 16, true);
+
+      // data subchunk
+      writeStr(36, 'data');
+      view.setUint32(40, dataSize, true);
+
+      let offset = 44;
+      for (let i = 0; i < numSamples; i++, offset += 2) {
+        const s = Math.max(-1, Math.min(1, samples[i]));
+        view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+      }
+
+      return new Blob([view], { type: 'audio/wav' });
+    }
+
+    async function handleFileUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      document.querySelectorAll('.chip-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('audioStatus').innerText = `Loading ${file.name}...`;
+
+      try {
+        stopPlayback();
+        if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const arrayBuffer = await file.arrayBuffer();
+        audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        
+        // Convert to clean 16kHz mono WAV blob
+        const wavBlob = audioBufferToWav(audioBuffer, 16000);
+        wavBlob.name = file.name.replace(/\.[^/.]+$/, "") + ".wav";
+        currentBlob = wavBlob;
+
+        document.getElementById('totalTime').innerText = audioBuffer.duration.toFixed(2);
+        document.getElementById('currentTime').innerText = "0.00";
+        drawWaveform(audioBuffer);
+        document.getElementById('audioStatus').innerText = `${file.name} (${audioBuffer.duration.toFixed(1)}s)`;
+      } catch (err) {
+        console.warn("Could not re-encode upload, using raw file:", err);
+        currentBlob = file;
+        document.getElementById('audioStatus').innerText = file.name;
+        await decodeAndDraw(file);
+      }
+    }
+
+    async function toggleMicRecording() {
+      const micBtn = document.getElementById('micBtn');
+      const micLabel = document.getElementById('micLabel');
+
+      if (isRecording) {
+        // Stop recording
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+          mediaRecorder.stop();
+        }
+        isRecording = false;
+        micBtn.classList.remove('recording');
+        micLabel.innerText = "Record with Microphone";
+      } else {
+        // Start recording
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          recordedChunks = [];
+          
+          // Use standard supported MIME type
+          let options = {};
+          if (MediaRecorder.isTypeSupported('audio/webm')) {
+            options = { mimeType: 'audio/webm' };
+          } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+            options = { mimeType: 'audio/mp4' };
+          }
+
+          mediaRecorder = new MediaRecorder(stream, options);
+          mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
+          mediaRecorder.onstop = async () => {
+            // Stop mic tracks to free microphone
+            stream.getTracks().forEach(t => t.stop());
+
+            document.getElementById('audioStatus').innerText = 'Processing recording...';
+            try {
+              const rawBlob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+              const arrayBuffer = await rawBlob.arrayBuffer();
+              
+              if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+              audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+              
+              // Convert decoded audio to authentic 16kHz 16-bit PCM WAV
+              const wavBlob = audioBufferToWav(audioBuffer, 16000);
+              wavBlob.name = 'live_browser_recording.wav';
+              currentBlob = wavBlob;
+
+              document.getElementById('totalTime').innerText = audioBuffer.duration.toFixed(2);
+              document.getElementById('currentTime').innerText = "0.00";
+              drawWaveform(audioBuffer);
+              document.getElementById('audioStatus').innerText = `Mic Recorded (${audioBuffer.duration.toFixed(1)}s WAV)`;
+              document.querySelectorAll('.chip-btn').forEach(b => b.classList.remove('active'));
+            } catch (convErr) {
+              console.error("Mic decode error:", convErr);
+              alert("Could not process microphone audio. Please try recording again.");
+            }
+          };
+
+          mediaRecorder.start(250); // Record in 250ms chunks
+          isRecording = true;
+          micBtn.classList.add('recording');
+          micLabel.innerText = "Recording (Click to Stop)...";
+        } catch (err) {
+          alert("Microphone permission denied or not supported in this browser: " + err.message);
+        }
+      }
+    }
+
+    async function decodeAndDraw(blob) {
+      stopPlayback();
+      const arrayBuffer = await blob.arrayBuffer();
+      if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
+      document.getElementById('totalTime').innerText = audioBuffer.duration.toFixed(2);
+      document.getElementById('currentTime').innerText = "0.00";
+      drawWaveform(audioBuffer);
+    }
+
+    function drawWaveform(buffer, progress = 0) {
+      const canvas = document.getElementById('waveformCanvas');
+      const ctx = canvas.getContext('2d');
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = canvas.offsetWidth * dpr;
+      canvas.height = canvas.offsetHeight * dpr;
+      ctx.scale(dpr, dpr);
+
+      const width = canvas.offsetWidth;
+      const height = canvas.offsetHeight;
+      const data = buffer.getChannelData(0);
+      const step = Math.ceil(data.length / width);
+      const amp = height / 2;
+
+      ctx.clearRect(0, 0, width, height);
+
+      // Centerline
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.05)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, amp);
+      ctx.lineTo(width, amp);
+      ctx.stroke();
+
+      // Waveform bars
+      const progressX = progress * width;
+      for (let i = 0; i < width; i += 3) {
+        let min = 1.0;
+        let max = -1.0;
+        for (let j = 0; j < step; j++) {
+          const datum = data[(i * step) + j];
+          if (datum < min) min = datum;
+          if (datum > max) max = datum;
+        }
+        const barHeight = Math.max(3, (max - min) * amp * 0.9);
+        const y = amp - barHeight / 2;
+
+        ctx.fillStyle = i <= progressX ? "#00E5FF" : "rgba(255, 255, 255, 0.25)";
+        ctx.fillRect(i, y, 2, barHeight);
+      }
+    }
+
+    function togglePlay() {
+      if (!audioBuffer) return;
+      if (isPlaying) {
+        stopPlayback();
+      } else {
+        startPlayback();
+      }
+    }
+
+    function startPlayback() {
+      if (!audioBuffer) return;
+      audioSource = audioContext.createBufferSource();
+      audioSource.buffer = audioBuffer;
+      audioSource.connect(audioContext.destination);
+
+      const offset = pauseTime % audioBuffer.duration;
+      audioSource.start(0, offset);
+      startTime = audioContext.currentTime - offset;
+      isPlaying = true;
+      document.getElementById('playIcon').innerHTML = '<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>';
+
+      audioSource.onended = () => {
+        if (isPlaying && (audioContext.currentTime - startTime >= audioBuffer.duration)) {
+          stopPlayback();
+          pauseTime = 0;
+          document.getElementById('currentTime').innerText = "0.00";
+          drawWaveform(audioBuffer, 0);
+        }
+      };
+
+      renderLoop();
+    }
+
+    function stopPlayback() {
+      if (audioSource) {
+        try { audioSource.stop(); } catch(e){}
+        audioSource = null;
+      }
+      if (isPlaying) {
+        pauseTime = audioContext.currentTime - startTime;
+      }
+      isPlaying = false;
+      cancelAnimationFrame(animFrame);
+      document.getElementById('playIcon').innerHTML = '<path d="M8 5v14l11-7z"/>';
+    }
+
+    function renderLoop() {
+      if (!isPlaying || !audioBuffer) return;
+      const cur = audioContext.currentTime - startTime;
+      const prog = Math.min(1, cur / audioBuffer.duration);
+      document.getElementById('currentTime').innerText = cur.toFixed(2);
+      drawWaveform(audioBuffer, prog);
+      animFrame = requestAnimationFrame(renderLoop);
+    }
+
+    async function runPrediction() {
+      if (!currentBlob) {
+        alert("Please select a sample or record an audio file first!");
+        return;
+      }
+
+      const btn = document.getElementById('analyzeBtn');
+      btn.disabled = true;
+      btn.innerHTML = `<span class="status-dot"></span> Extracting 83 Features & Classifying...`;
+
+      try {
+        const formData = new FormData();
+        formData.append('file', currentBlob, currentBlob.name || 'sample.wav');
+        formData.append('version', currentModelVersion);
+
+        const resp = await fetch(`/predict?version=${currentModelVersion}`, {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!resp.ok) {
+          const errData = await resp.json();
+          throw new Error(errData.detail || "Prediction failed");
+        }
+
+        const data = await resp.json();
+        renderResults(data);
+      } catch (err) {
+        alert(`Analysis Error: ${err.message}`);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = `<svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg> Run Cloud AI Diagnosis`;
+      }
+    }
+
+    function renderResults(data) {
+      document.getElementById('resultsPlaceholder').style.display = 'none';
+      document.getElementById('resultsContainer').style.display = 'block';
+
+      // Update engine badge
+      const engineBadge = document.getElementById('resultEngineBadge');
+      if (engineBadge) {
+        const isV1 = (data.version === 'v1' || currentModelVersion === 'v1');
+        const isV3 = (data.version === 'v3' || currentModelVersion === 'v3');
+        engineBadge.innerText = data.version_tag || (isV1 ? 'V1 (Original Baseline)' : isV3 ? 'V3 (Deep Learning CNN)' : 'V2 (Enhanced AI)');
+        engineBadge.style.color = isV1 ? '#F59E0B' : isV3 ? '#10B981' : 'var(--cyan)';
+      }
+
+      // Triage banner
+      const banner = document.getElementById('triageBanner');
+      const title = document.getElementById('triageTitle');
+      const subtitle = document.getElementById('triageSubtitle');
+
+      if (data.needs_referral) {
+        banner.className = "triage-banner triage-alert";
+        title.innerText = `NEEDS REFERRAL — YES (${data.overall_label.toUpperCase()})`;
+        subtitle.innerText = `Abnormal Sound Detected (${(data.confidence * 100).toFixed(1)}% Confidence)`;
+      } else {
+        banner.className = "triage-banner triage-normal";
+        title.innerText = `NORMAL VESICULAR SOUND — NO REFERRAL NEEDED`;
+        subtitle.innerText = `Clear Pulmonary Breath Sound (${(data.confidence * 100).toFixed(1)}% Confidence)`;
+      }
+
+      // Progress bars
+      const probs = data.probabilities || {};
+      const crackle = ((probs.crackle || 0) * 100).toFixed(1);
+      const wheeze = ((probs.wheeze || 0) * 100).toFixed(1);
+      const normal = ((probs.normal || 0) * 100).toFixed(1);
+      const both = ((probs.both || 0) * 100).toFixed(1);
+
+      document.getElementById('probCrackle').innerText = `${crackle}%`;
+      document.getElementById('barCrackle').style.width = `${crackle}%`;
+
+      document.getElementById('probWheeze').innerText = `${wheeze}%`;
+      document.getElementById('barWheeze').style.width = `${wheeze}%`;
+
+      document.getElementById('probNormal').innerText = `${normal}%`;
+      document.getElementById('barNormal').style.width = `${normal}%`;
+
+      document.getElementById('probBoth').innerText = `${both}%`;
+      document.getElementById('barBoth').style.width = `${both}%`;
+
+      // Segment chips
+      const chipsContainer = document.getElementById('segmentChips');
+      chipsContainer.innerHTML = '';
+      (data.segments || []).forEach(seg => {
+        const chip = document.createElement('div');
+        chip.className = 'seg-chip';
+        let col = "#10B981";
+        if (seg.label === 'crackle') col = "#FF3366";
+        else if (seg.label === 'wheeze') col = "#F59E0B";
+        else if (seg.label === 'both') col = "#A855F7";
+
+        chip.innerHTML = `
+          <span style="color:${col}; font-weight:700;">${seg.label.toUpperCase()}</span>
+          <span>${seg.start}s-${seg.end}s</span>
+          <span style="color:var(--text-muted); font-size:0.7rem;">(${(seg.confidence*100).toFixed(0)}%)</span>
+        `;
+        chipsContainer.appendChild(chip);
+      });
+
+      // Recommendation box
+      document.getElementById('recBox').innerText = data.clinical_recommendation || "Examination complete.";
+    }
+  </script>
+</body>
+</html>
