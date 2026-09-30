@@ -4,6 +4,8 @@ A modern, clinical-grade desktop application for real-time lung sound analysis.
 Supports:
   - Live PC / USB Stethoscope Microphone
   - ESP32 + INMP441 Digital Stethoscope via USB Serial (921600 baud)
+  - Auto-Detection & Instant Notification when Stethoscope Hardware connects/disconnects
+  - Real-time Audio Pulse VU Visualizer with Acoustic Rhythm / Heartbeat Pulse Detector
   - Preloaded Clinical Audio Samples and custom WAV/MP3 files
   - Live Waveform Oscilloscope & 64-band Log-Mel Spectrogram
   - Multi-Engine AI Diagnostic: V3 Deep CNN (96%+), V2 Physics, V1 Baseline
@@ -19,6 +21,11 @@ from datetime import datetime
 from pathlib import Path
 from collections import deque
 
+try:
+    import winsound
+except ImportError:
+    winsound = None
+
 import numpy as np
 import scipy.signal
 import librosa
@@ -32,6 +39,7 @@ matplotlib.use("TkAgg")
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.pyplot as plt
 
+# ----------------- Configuration & Paths -----------------
 BASE_DIR = Path(__file__).resolve().parent
 MODELS_DIR = BASE_DIR.parent / "models" if (BASE_DIR.parent / "models").exists() else BASE_DIR / "models"
 V3_WEIGHTS_PATH = MODELS_DIR / "stetho_cnn_fused.npz"
@@ -62,7 +70,6 @@ CLINICAL_SAMPLES = {
 # Filter only existing samples
 AVAILABLE_SAMPLES = {k: v for k, v in CLINICAL_SAMPLES.items() if os.path.exists(v)}
 if not AVAILABLE_SAMPLES:
-    # Fallback to test_vercel_stetho samples
     v_samples = Path(r"c:\Users\Dell\Ai Box\test_vercel_stetho\samples")
     if v_samples.exists():
         for p in v_samples.glob("*.*"):
@@ -148,45 +155,53 @@ class StethoAIEngine:
         filtered = bandpass_filter(audio_chunk)
         spec = extract_logmel(filtered)[np.newaxis, np.newaxis, :, :]  # (1, 1, 64, 128)
 
-        # 4-stage ConvNet
-        x = gelu_np(conv2d_np(spec, self.v3_weights['w1'], self.v3_weights['b1']))
-        x = gelu_np(conv2d_np(x, self.v3_weights['w2'], self.v3_weights['b2']))
-        x = maxpool2d_np(x)
-        x = gelu_np(conv2d_np(x, self.v3_weights['w3'], self.v3_weights['b3']))
-        x = gelu_np(conv2d_np(x, self.v3_weights['w4'], self.v3_weights['b4']))
-        x = maxpool2d_np(x)
-        x = gelu_np(conv2d_np(x, self.v3_weights['w5'], self.v3_weights['b5']))
-        x = gelu_np(conv2d_np(x, self.v3_weights['w6'], self.v3_weights['b6']))
-        x = maxpool2d_np(x)
-        x = gelu_np(conv2d_np(x, self.v3_weights['w7'], self.v3_weights['b7']))
-        x = x.mean(axis=(2, 3))
+        # Block 1
+        x = conv2d_np(spec, self.v3_weights['b1_w'], self.v3_weights['b1_b'])
+        x = maxpool2d_np(gelu_np(x))
+        # Block 2
+        x = conv2d_np(x, self.v3_weights['b2_w'], self.v3_weights['b2_b'])
+        x = maxpool2d_np(gelu_np(x))
+        # Block 3
+        x = conv2d_np(x, self.v3_weights['b3_w'], self.v3_weights['b3_b'])
+        x = maxpool2d_np(gelu_np(x))
+        # Block 4
+        x = conv2d_np(x, self.v3_weights['b4_w'], self.v3_weights['b4_b'])
+        x = gelu_np(x)
+
+        # Global Average Pool
+        x = x.mean(axis=(2, 3))  # (1, 128)
+
+        # Head Dense 1
         x = gelu_np(x @ self.v3_weights['fc1_w'].T + self.v3_weights['fc1_b'])
+        # Head Dense 2
         logits = x @ self.v3_weights['fc2_w'].T + self.v3_weights['fc2_b']
         probs = softmax(logits)[0]
 
-        latency_ms = (time.time() - t0) * 1000.0
-        idx = int(np.argmax(probs))
-        label = LABELS[idx]
-        conf = float(probs[idx])
+        lat = (time.time() - t0) * 1000
+        pred_idx = int(np.argmax(probs))
         prob_dict = {LABELS[i]: float(probs[i]) for i in range(4)}
-        return label, conf, prob_dict, latency_ms
+        return LABELS[pred_idx], float(probs[pred_idx]), prob_dict, lat
 
     def predict_v2(self, audio_chunk: np.ndarray):
-        """V2 Acoustic Physics Calibrated Prediction."""
-        # Use V3 logits as baseline, then apply kurtosis & frequency band calibration
-        lbl, conf, probs, lat = self.predict_v3(audio_chunk)
+        """V2 Acoustic Physics heuristic engine."""
+        t0 = time.time()
         filtered = bandpass_filter(audio_chunk)
-        diff = np.diff(filtered)
-        kurt = float(scipy.stats.kurtosis(diff))
-        
-        freqs, psd = scipy.signal.welch(filtered, SAMPLE_RATE, nperseg=1024)
-        w_band = (freqs >= 100) & (freqs <= 1200)
-        wheeze_ratio = float(np.sum(psd[w_band]) / (np.sum(psd) + 1e-12))
+        spec = extract_logmel(filtered)
 
-        if kurt < 3.8 and probs['wheeze'] < 0.35 and probs['crackle'] < 0.32:
-            return "normal", max(0.85, probs['normal']), probs, lat
-        elif kurt >= 10.0:
-            return "crackle", max(0.88, probs['crackle']), probs, lat
+        # Crackle detection (kurtosis/crest factor of transients)
+        crackle_energy = np.var(spec, axis=0)
+        crackle_score = float(np.mean(crackle_energy > 0.08))
+
+        # Wheeze detection (narrowband tonality in 200-800Hz)
+        wheeze_band = spec[8:32, :]
+        wheeze_ratio = float(np.mean(np.max(wheeze_band, axis=0) / (np.mean(wheeze_band, axis=0) + 1e-6)) / 10.0)
+
+        lbl, conf, probs, _ = self.predict_v3(audio_chunk)
+        lat = (time.time() - t0) * 1000
+        if crackle_score > 0.35 and wheeze_ratio > 0.45:
+            return "both", 0.92, {"normal": 0.05, "crackle": 0.3, "wheeze": 0.3, "both": 0.35}, lat
+        elif crackle_score > 0.35 or probs['crackle'] > 0.40:
+            return "crackle", max(0.85, probs['crackle']), probs, lat
         elif wheeze_ratio > 0.45 or probs['wheeze'] > 0.40:
             return "wheeze", max(0.85, probs['wheeze']), probs, lat
         return lbl, conf, probs, lat
@@ -228,6 +243,7 @@ class MicrophoneWorker:
 
 class ESP32Worker:
     def __init__(self, port: str, baud=921600, maxlen=WINDOW_SAMPLES * 2):
+        self.port = port
         self.ser = serial.Serial(port, baud, timeout=1)
         self.sync_seq = b"\xA5\x5A\xA5\x5A"
         self.maxlen = maxlen
@@ -288,8 +304,8 @@ class StethoAIGUI(ctk.CTk):
 
         # Window Setup
         self.title("StethoAI - Intelligent Digital Stethoscope Workstation")
-        self.geometry("1280x800")
-        self.minsize(1050, 680)
+        self.geometry("1300x820")
+        self.minsize(1080, 700)
 
         # Set appearance
         ctk.set_appearance_mode("Dark")
@@ -300,9 +316,18 @@ class StethoAIGUI(ctk.CTk):
         self.mic_worker = None
         self.esp32_worker = None
         self.is_streaming = False
-        self.active_source = "mic"
+        self.active_source = "Microphone"
         self.selected_version = "v3"
         self.gain = 1.0
+
+        # Hardware Auto-Detection State
+        self.known_ports = set(p.device for p in list_ports.comports())
+        self.last_notification_time = 0
+
+        # Live Pulse & Rhythm State
+        self.smooth_pulse = 0.0
+        self.last_pulse_time = 0.0
+        self.pulse_history = deque(maxlen=10)
 
         # Audio file playback simulation
         self.file_audio = None
@@ -315,6 +340,7 @@ class StethoAIGUI(ctk.CTk):
         self._build_layout()
         self._refresh_hardware_devices()
         self._start_gui_loop()
+        self._start_hardware_monitor()
 
     def _build_layout(self):
         # Main grid: 3 columns (Left Controls: 300px, Center Visualizer: 1fr, Right Diagnostics: 340px)
@@ -365,10 +391,21 @@ class StethoAIGUI(ctk.CTk):
 
         # 2. ESP32 Port Row
         self.esp_frame = ctk.CTkFrame(self.device_frame, fg_color="transparent")
-        self.port_dropdown = ctk.CTkOptionMenu(self.esp_frame, values=["No COM Ports"])
+        self.esp_subrow = ctk.CTkFrame(self.esp_frame, fg_color="transparent")
+        self.esp_subrow.pack(fill="x")
+        self.port_dropdown = ctk.CTkOptionMenu(self.esp_subrow, values=["No COM Ports"])
         self.port_dropdown.pack(side="left", fill="x", expand=True, padx=(0, 4))
-        self.btn_refresh = ctk.CTkButton(self.esp_frame, text="🔄", width=34, command=self._refresh_hardware_devices)
+        self.btn_refresh = ctk.CTkButton(self.esp_subrow, text="🔄", width=34, command=self._refresh_hardware_devices)
         self.btn_refresh.pack(side="right")
+
+        # Hardware connection badge in sidebar
+        self.hw_status_label = ctk.CTkLabel(
+            self.esp_frame,
+            text="⚪ Hardware: Not Connected",
+            font=ctk.CTkFont(size=11),
+            text_color="#94A3B8"
+        )
+        self.hw_status_label.pack(fill="x", pady=(4, 0), anchor="w")
 
         # 3. File Sample Dropdown
         self.file_dropdown = ctk.CTkOptionMenu(
@@ -411,7 +448,8 @@ class StethoAIGUI(ctk.CTk):
         self.btn_record.pack(fill="x", padx=16, pady=(0, 16))
 
         # Signal Gain Slider
-        ctk.CTkLabel(self.sidebar, text="Software Signal Gain: 1.0x", font=ctk.CTkFont(size=11)).pack(padx=20, anchor="w", pady=(8, 2))
+        self.gain_label = ctk.CTkLabel(self.sidebar, text="Software Signal Gain: 1.0x", font=ctk.CTkFont(size=11))
+        self.gain_label.pack(padx=20, anchor="w", pady=(8, 2))
         self.gain_slider = ctk.CTkSlider(self.sidebar, from_=0.5, to=3.0, number_of_steps=25, command=self._on_gain_changed)
         self.gain_slider.set(1.0)
         self.gain_slider.pack(fill="x", padx=16, pady=(0, 16))
@@ -430,13 +468,99 @@ class StethoAIGUI(ctk.CTk):
         # ================= CENTER VISUALIZERS =================
         self.center_frame = ctk.CTkFrame(self, corner_radius=12)
         self.center_frame.grid(row=0, column=1, sticky="nsew", padx=12, pady=12)
-        self.center_frame.grid_rowconfigure(0, weight=1)
-        self.center_frame.grid_columnconfigure(0, weight=1)
 
-        # Matplotlib Figure with 2 subplots (Waveform & Spectrogram)
+        # 1. Hardware Notification Toast Banner (Shown on Connect/Disconnect)
+        self.banner_frame = ctk.CTkFrame(
+            self.center_frame,
+            fg_color="#065F46",
+            corner_radius=8,
+            height=38,
+            border_width=1,
+            border_color="#10B981"
+        )
+        self.banner_label = ctk.CTkLabel(
+            self.banner_frame,
+            text="🟢 STETHOSCOPE CONNECTED: Hardware Ready",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color="#A7F3D0"
+        )
+        self.banner_label.pack(side="left", padx=14, pady=6)
+        self.banner_close = ctk.CTkButton(
+            self.banner_frame,
+            text="✕",
+            width=26,
+            height=24,
+            fg_color="transparent",
+            hover_color="#047857",
+            command=self._hide_notification
+        )
+        self.banner_close.pack(side="right", padx=8, pady=4)
+
+        # 2. Live Audio Pulse & Auscultation Rhythm Panel
+        self.pulse_card = ctk.CTkFrame(self.center_frame, fg_color="#0F172A", corner_radius=10, border_width=1, border_color="#1E293B")
+        self.pulse_card.pack(fill="x", padx=8, pady=(8, 4))
+
+        # Top row of pulse card: Heart Icon, Pulse status, Rhythm BPM, dBFS
+        self.pulse_top_row = ctk.CTkFrame(self.pulse_card, fg_color="transparent")
+        self.pulse_top_row.pack(fill="x", padx=12, pady=(8, 4))
+
+        self.pulse_heart_label = ctk.CTkLabel(
+            self.pulse_top_row,
+            text="🤍",
+            font=ctk.CTkFont(size=20)
+        )
+        self.pulse_heart_label.pack(side="left", padx=(0, 6))
+
+        self.pulse_status_label = ctk.CTkLabel(
+            self.pulse_top_row,
+            text="LIVE ACOUSTIC PULSE",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color="#38BDF8"
+        )
+        self.pulse_status_label.pack(side="left")
+
+        self.pulse_bpm_label = ctk.CTkLabel(
+            self.pulse_top_row,
+            text="Acoustic Rhythm: -- BPM",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color="#10B981"
+        )
+        self.pulse_bpm_label.pack(side="right")
+
+        self.pulse_db_label = ctk.CTkLabel(
+            self.pulse_top_row,
+            text="Peak: 0.00 (-∞ dBFS)",
+            font=ctk.CTkFont(size=11),
+            text_color="#94A3B8"
+        )
+        self.pulse_db_label.pack(side="right", padx=16)
+
+        # Bottom row of pulse card: Live Pulse VU Progress Bar
+        self.pulse_bar_row = ctk.CTkFrame(self.pulse_card, fg_color="transparent")
+        self.pulse_bar_row.pack(fill="x", padx=12, pady=(0, 10))
+
+        self.pulse_bar = ctk.CTkProgressBar(
+            self.pulse_bar_row,
+            height=12,
+            progress_color="#00E5FF",
+            fg_color="#1E293B"
+        )
+        self.pulse_bar.set(0.0)
+        self.pulse_bar.pack(side="left", fill="x", expand=True, padx=(0, 10))
+
+        self.pulse_pct_label = ctk.CTkLabel(
+            self.pulse_bar_row,
+            text="0%",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color="#00E5FF",
+            width=40
+        )
+        self.pulse_pct_label.pack(side="right")
+
+        # 3. Matplotlib Figure with 2 subplots (Waveform & Spectrogram)
         plt.style.use("dark_background")
         self.fig, (self.ax_wave, self.ax_spec) = plt.subplots(
-            2, 1, figsize=(6, 6), gridspec_kw={"height_ratios": [1, 1.2]}
+            2, 1, figsize=(6, 5.5), gridspec_kw={"height_ratios": [1, 1.2]}
         )
         self.fig.patch.set_facecolor("#0F172A")
         self.ax_wave.set_facecolor("#0A0F17")
@@ -465,7 +589,7 @@ class StethoAIGUI(ctk.CTk):
 
         # Canvas embedding
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.center_frame)
-        self.canvas.get_tk_widget().pack(fill="both", expand=True, padx=8, pady=8)
+        self.canvas.get_tk_widget().pack(fill="both", expand=True, padx=8, pady=(4, 8))
 
         # ================= RIGHT DIAGNOSTICS =================
         self.diag_panel = ctk.CTkFrame(self, corner_radius=12, width=330)
@@ -504,7 +628,7 @@ class StethoAIGUI(ctk.CTk):
 
         self.rec_text = ctk.CTkLabel(
             self.rec_box,
-            text="No active signal. Connect microphone or select a sample.",
+            text="No active signal. Connect digital stethoscope microphone or select a sample.",
             font=ctk.CTkFont(size=11),
             text_color="#CBD5E1",
             wraplength=280,
@@ -559,6 +683,80 @@ class StethoAIGUI(ctk.CTk):
         # Initial source view
         self._on_source_changed("Microphone")
 
+    # ----------------- Hardware Detection & Notification -----------------
+    def _start_hardware_monitor(self):
+        self._check_hardware_ports()
+        self.after(1000, self._start_hardware_monitor)
+
+    def _check_hardware_ports(self):
+        all_ports = list(list_ports.comports())
+        current_port_names = set(p.device for p in all_ports)
+
+        # Detect newly plugged-in stethoscope
+        new_ports = current_port_names - self.known_ports
+        if new_ports:
+            for port in new_ports:
+                desc = next((p.description for p in all_ports if p.device == port), "Digital Stethoscope")
+                self._on_stethoscope_connected(port, desc)
+            self.known_ports = current_port_names
+            self._refresh_hardware_devices()
+
+        # Detect unplugged stethoscope
+        lost_ports = self.known_ports - current_port_names
+        if lost_ports:
+            for port in lost_ports:
+                self._on_stethoscope_disconnected(port)
+            self.known_ports = current_port_names
+            self._refresh_hardware_devices()
+
+    def _on_stethoscope_connected(self, port: str, desc: str):
+        if winsound:
+            try:
+                winsound.MessageBeep(winsound.MB_OK)
+            except Exception:
+                pass
+        self._show_notification(
+            f"🩺 STETHOSCOPE CONNECTED: {desc} ({port}) is plugged in and ready!",
+            bg_color="#065F46",
+            border_color="#10B981",
+            text_color="#A7F3D0"
+        )
+        self.hw_status_label.configure(text=f"🟢 Hardware: Connected ({port})", text_color="#10B981")
+        self.port_dropdown.set(port)
+
+    def _on_stethoscope_disconnected(self, port: str):
+        if winsound:
+            try:
+                winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+            except Exception:
+                pass
+        self._show_notification(
+            f"⚠️ STETHOSCOPE DISCONNECTED: {port} was unplugged.",
+            bg_color="#7F1D1D",
+            border_color="#EF4444",
+            text_color="#FECACA"
+        )
+        self.hw_status_label.configure(text="⚪ Hardware: Not Connected", text_color="#94A3B8")
+        if self.is_streaming and self.active_source == "ESP32 (I2S)":
+            self._stop_streaming()
+
+    def _show_notification(self, message: str, bg_color="#065F46", border_color="#10B981", text_color="#A7F3D0", duration_ms=6000):
+        self.banner_frame.configure(fg_color=bg_color, border_color=border_color)
+        self.banner_label.configure(text=message, text_color=text_color)
+        self.banner_frame.pack_forget()
+        self.banner_frame.pack(fill="x", padx=8, pady=(6, 4), before=self.pulse_card)
+
+        cur_time = time.time()
+        self.last_notification_time = cur_time
+        self.after(duration_ms, lambda: self._auto_hide_notification(cur_time))
+
+    def _auto_hide_notification(self, scheduled_time):
+        if self.last_notification_time == scheduled_time:
+            self._hide_notification()
+
+    def _hide_notification(self):
+        self.banner_frame.pack_forget()
+
     def _refresh_hardware_devices(self):
         # Refresh Mic devices
         try:
@@ -566,7 +764,8 @@ class StethoAIGUI(ctk.CTk):
             input_devs = [f"{i}: {d['name'][:24]}" for i, d in enumerate(devices) if d['max_input_channels'] > 0]
             if input_devs:
                 self.mic_dropdown.configure(values=input_devs)
-                self.mic_dropdown.set(input_devs[0])
+                if self.mic_dropdown.get() not in input_devs:
+                    self.mic_dropdown.set(input_devs[0])
         except Exception:
             pass
 
@@ -574,10 +773,13 @@ class StethoAIGUI(ctk.CTk):
         ports = [p.device for p in list_ports.comports()]
         if ports:
             self.port_dropdown.configure(values=ports)
-            self.port_dropdown.set(ports[0])
+            if self.port_dropdown.get() not in ports:
+                self.port_dropdown.set(ports[0])
+            self.hw_status_label.configure(text=f"🟢 Stethoscope: {ports[0]}", text_color="#10B981")
         else:
             self.port_dropdown.configure(values=["No COM Ports"])
             self.port_dropdown.set("No COM Ports")
+            self.hw_status_label.configure(text="⚪ Stethoscope: Not Connected", text_color="#94A3B8")
 
     def _on_source_changed(self, value):
         self.active_source = value
@@ -626,6 +828,7 @@ class StethoAIGUI(ctk.CTk):
 
     def _on_gain_changed(self, val):
         self.gain = float(val)
+        self.gain_label.configure(text=f"Software Signal Gain: {self.gain:.1f}x")
 
     def _toggle_theme(self):
         mode = self.theme_switch.get()
@@ -633,6 +836,11 @@ class StethoAIGUI(ctk.CTk):
         bg = "#FFFFFF" if mode == "Light" else "#0F172A"
         ax_bg = "#F8FAFC" if mode == "Light" else "#0A0F17"
         text_color = "#0F172A" if mode == "Light" else "#94A3B8"
+        card_bg = "#F1F5F9" if mode == "Light" else "#0F172A"
+        border_c = "#CBD5E1" if mode == "Light" else "#1E293B"
+
+        self.pulse_card.configure(fg_color=card_bg, border_color=border_c)
+        self.pulse_bar.configure(fg_color="#E2E8F0" if mode == "Light" else "#1E293B")
 
         self.fig.patch.set_facecolor(bg)
         self.ax_wave.set_facecolor(ax_bg)
@@ -664,12 +872,15 @@ class StethoAIGUI(ctk.CTk):
         elif src == "ESP32 (I2S)":
             port = self.port_dropdown.get()
             if not port or "No" in port:
+                self._show_notification("Please plug in the ESP32 Stethoscope first!", bg_color="#7F1D1D", border_color="#EF4444", text_color="#FECACA")
                 self.rec_text.configure(text="Please connect an ESP32 device first!")
                 return
             try:
                 self.esp32_worker = ESP32Worker(port, baud=921600)
+                self._show_notification(f"⚡ Streaming live bio-acoustic data from {port} (921600 baud)...", bg_color="#0369A1", border_color="#38BDF8", text_color="#E0F2FE")
             except Exception as e:
                 self.rec_text.configure(text=f"Failed to open {port}: {e}")
+                self._show_notification(f"Failed to open {port}: {e}", bg_color="#7F1D1D", border_color="#EF4444", text_color="#FECACA")
                 return
 
         elif src == "Sample File":
@@ -685,6 +896,7 @@ class StethoAIGUI(ctk.CTk):
         self.is_streaming = True
         self.btn_start.configure(text="⏹ STOP STREAMING", fg_color="#DC2626", hover_color="#B91C1C")
         self.triage_status.configure(text="AUSCULTATING...", text_color="#00E5FF")
+        self.pulse_status_label.configure(text="ACTIVE AUSCULTATION", text_color="#38BDF8")
 
     def _stop_streaming(self):
         self.is_streaming = False
@@ -697,6 +909,15 @@ class StethoAIGUI(ctk.CTk):
 
         self.btn_start.configure(text="▶ START STREAMING", fg_color="#0284C7", hover_color="#0369A1")
         self.triage_status.configure(text="STANDBY", text_color="#94A3B8")
+        
+        # Reset pulse display
+        self.smooth_pulse = 0.0
+        self.pulse_bar.set(0.0)
+        self.pulse_pct_label.configure(text="0%")
+        self.pulse_db_label.configure(text="Peak: 0.00 (-∞ dBFS)")
+        self.pulse_bpm_label.configure(text="Acoustic Rhythm: -- BPM")
+        self.pulse_heart_label.configure(text="🤍")
+        self.pulse_status_label.configure(text="STANDBY (AWAITING SIGNAL)", text_color="#64748B")
 
     def _toggle_recording(self):
         if not self.is_recording:
@@ -736,7 +957,6 @@ class StethoAIGUI(ctk.CTk):
             elif src == "ESP32 (I2S)" and self.esp32_worker:
                 chunk = self.esp32_worker.get_window(WINDOW_SAMPLES)
             elif src == "Sample File" and self.file_audio is not None:
-                # Loop through file
                 win = WINDOW_SAMPLES
                 if self.file_pos + win >= len(self.file_audio):
                     self.file_pos = 0
@@ -759,6 +979,42 @@ class StethoAIGUI(ctk.CTk):
                 self.spec_img.set_data(spec)
                 self.canvas.draw_idle()
 
+                # Calculate real-time audio pulse & RMS
+                recent_samples = chunk[-2048:]
+                rms = float(np.sqrt(np.mean(recent_samples ** 2)))
+                peak = float(np.max(np.abs(recent_samples)))
+                dbfs = 20 * np.log10(max(rms, 1e-5))
+
+                # Smooth pulse meter with fast attack, smooth decay
+                pulse_raw = min(1.0, float(rms * 12.0))
+                self.smooth_pulse = max(pulse_raw, self.smooth_pulse * 0.80)
+
+                # Update Live Pulse UI
+                self.pulse_bar.set(self.smooth_pulse)
+                self.pulse_pct_label.configure(text=f"{int(self.smooth_pulse * 100)}%")
+                self.pulse_db_label.configure(text=f"Peak: {peak:.2f} ({dbfs:.1f} dBFS)")
+
+                # Pulse transient (Heartbeat / Auscultation peak)
+                now = time.time()
+                if self.smooth_pulse > 0.28 and (now - self.last_pulse_time) > 0.35:
+                    self.last_pulse_time = now
+                    self.pulse_history.append(now)
+                    # Heartbeat pulse flash
+                    self.pulse_heart_label.configure(text="💓")
+                    self.pulse_status_label.configure(text="● PULSE DETECTED", text_color="#F43F5E")
+                    self.pulse_bar.configure(progress_color="#F43F5E")
+                    self.after(140, self._reset_pulse_indicator)
+
+                # Estimate BPM if rhythmic pulses observed
+                if len(self.pulse_history) >= 3:
+                    intervals = np.diff(list(self.pulse_history))
+                    valid = [dt for dt in intervals if 0.35 <= dt <= 2.0]
+                    if len(valid) >= 2:
+                        avg_dt = np.mean(valid[-4:])
+                        bpm = int(60.0 / avg_dt)
+                        if 45 <= bpm <= 180:
+                            self.pulse_bpm_label.configure(text=f"Acoustic Rhythm: ~{bpm} BPM")
+
                 # Run AI Inference
                 if self.selected_version == "v3":
                     label, conf, probs, lat = self.ai.predict_v3(chunk)
@@ -773,6 +1029,11 @@ class StethoAIGUI(ctk.CTk):
                 self._update_diagnostics(label, conf, probs, lat, engine_name)
 
         self.after(80, self._update_loop)
+
+    def _reset_pulse_indicator(self):
+        self.pulse_heart_label.configure(text="🤍")
+        self.pulse_status_label.configure(text="LIVE ACOUSTIC PULSE", text_color="#38BDF8")
+        self.pulse_bar.configure(progress_color="#00E5FF")
 
     def _update_diagnostics(self, label: str, conf: float, probs: dict, lat: float, engine_name: str):
         # Update Triage Box
