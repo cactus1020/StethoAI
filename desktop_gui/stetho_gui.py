@@ -32,10 +32,11 @@ matplotlib.use("TkAgg")
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.pyplot as plt
 
-# ----------------- Configuration & Paths -----------------
 BASE_DIR = Path(__file__).resolve().parent
-MODELS_DIR = BASE_DIR / "models"
+MODELS_DIR = BASE_DIR.parent / "models" if (BASE_DIR.parent / "models").exists() else BASE_DIR / "models"
 V3_WEIGHTS_PATH = MODELS_DIR / "stetho_cnn_fused.npz"
+if not V3_WEIGHTS_PATH.exists():
+    V3_WEIGHTS_PATH = BASE_DIR / "models" / "stetho_cnn_fused.npz"
 if not V3_WEIGHTS_PATH.exists():
     V3_WEIGHTS_PATH = Path(r"c:\Users\Dell\Ai Box\test_vercel_stetho\models\stetho_cnn_fused.npz")
 
